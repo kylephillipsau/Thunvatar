@@ -1,35 +1,26 @@
-'use strict';
+"use strict";
 
-/*
-Default settings. Initialize storage to these values.
-*/
-var addonSettings = {
-  longMonth: true,
-};
-
-/*
-Generic error logger.
-*/
-function onError(e) {
-  console.error(e);
-}
-
-/*
-On startup, check whether we have stored settings.
-If we don't, then store the default settings.
-*/
-function checkStoredSettings(storedSettings) {
-  if (!storedSettings.addonSettings) {
-    browser.storage.local.set({ addonSettings });
+function handleError(error) {
+  console.error("Thunvatar Error:", error);
+  if (error.message) {
+    console.error("Error message:", error.message);
+  }
+  if (error.stack) {
+    console.error("Stack trace:", error.stack);
   }
 }
 
-const gettingStoredSettings = browser.storage.local.get();
-gettingStoredSettings.then(checkStoredSettings, onError);
+async function initializeExtension() {
+  try {
+    console.log("Initializing Thunvatar extension...");
+    await browser.ThunvatarApi.addCustomColumn();
+    console.log("Thunvatar: Column added successfully");
+  } catch (error) {
+    handleError(error);
+  }
+}
 
-/* globals browser */
-var init = async () => {
-  browser.ThunvatarApi.addWindowListener('hich');
-};
-
-init();
+// Initialize when API is available
+if (typeof browser !== "undefined" && browser.ThunvatarApi) {
+  initializeExtension();
+}

@@ -1,70 +1,128 @@
-// This Source Code Form is subject to the terms of the
-// GNU General Public License, version 3.0.
+// api/experiments.js
+"use strict";
 
-'use strict';
+console.log("Loading Thunvatar experiment API...");
 
-let Services = globalThis.Services || ChromeUtils.import(
-  'resource://gre/modules/Services.jsm'
-).Services;
-let { ExtensionSupport } = ChromeUtils.import(
-  'resource:///modules/ExtensionSupport.jsm'
-);
-let { ExtensionParent } = ChromeUtils.import(
-  'resource://gre/modules/ExtensionParent.jsm'
-);
+ChromeUtils.defineESModuleGetters(this, {
+  ThreadPaneColumns: "chrome://messenger/content/ThreadPaneColumns.mjs"
+});
 
-const EXTENSION_NAME = 'thunvatar@mikaleb.com';
-let extension = ExtensionParent.GlobalManager.getExtension(EXTENSION_NAME);
-
-// Implements the functions defined in the experiments section of schema.json.
-var ThunvatarApi = class extends ExtensionCommon.ExtensionAPI {
-  onShutdown(isAppShutdown) {
-    if (isAppShutdown) return;
-    // Looks like we got uninstalled. Maybe a new version will be installed now.
-    // Due to new versions not taking effect (https://bugzilla.mozilla.org/show_bug.cgi?id=1634348)
-    // we invalidate the startup cache. That's the same effect as starting with -purgecaches
-    // (or deleting the startupCache directory from the profile).
-    Services.obs.notifyObservers(null, 'startupcache-invalidate');
+class AvatarFinder {
+  constructor(email) {
+    this.email = email;
   }
 
+  getDomainFromEmail() {
+    if (!this.email) return '';
+    const match = this.email.match(/@(.*)/);
+    if (!match || !match[1]) return '';
+    const domainParts = match[1].split('.');
+    if (domainParts.length < 2) return '';
+    return domainParts.slice(-2).join('.');
+  }
+
+  getDomainIcon() {
+    const domain = this.getDomainFromEmail();
+    return "chrome://messenger/skin/icons/mail.svg";
+  }
+}
+
+let columnAdded = false;
+
+var ThunvatarApi = class extends ExtensionCommon.ExtensionAPI {
   getAPI(context) {
-    context.callOnClose(this);
+    console.log("Initializing Thunvatar API");
+    
     return {
       ThunvatarApi: {
-        addWindowListener() {
-          // Adds a listener to detect new windows.
-          ExtensionSupport.registerWindowListener(EXTENSION_NAME, {
-            chromeURLs: [
-              'chrome://messenger/content/messenger.xul',
-              'chrome://messenger/content/messenger.xhtml',
-            ],
-            onLoadWindow: paint,
-            onUnloadWindow: unpaint,
+        async addCustomColumn() {
+          if (columnAdded) {
+            console.log("Column already exists, skipping...");
+            return;
+          }
+
+          console.log("Adding custom column...");
+
+          ThreadPaneColumns.addCustomColumn("thunvatarColumn", {
+            name: "Domain Icon",
+            sortable: true,
+            flex: 0,
+            width: "32px",
+            isCustom: true,
+            type: "image",
+            properties: ["image"],
+            
+            // Required callbacks
+            textCallback: () => "",
+            getProperties: () => ["image"],
+            getCellProperties: () => ["image"],
+            
+            // Image handling
+            getImageSrc: function(msgHdr) {
+              try {
+                console.log("Getting image for message:", msgHdr?.messageId);
+                
+                if (!msgHdr?.author) {
+                  console.log("No author found");
+                  return "chrome://messenger/skin/icons/mail.svg";
+                }
+
+                const authorMatch = msgHdr.mime2DecodedAuthor || msgHdr.author;
+                console.log("Author:", authorMatch);
+                
+                const emailMatch = authorMatch.match(/<(.+?)>/);
+                if (!emailMatch) {
+                  console.log("No email match found");
+                  return "chrome://messenger/skin/icons/mail.svg";
+                }
+
+                const email = emailMatch[1].toLowerCase();
+                console.log("Email found:", email);
+                
+                const avatarFinder = new AvatarFinder(email);
+                return avatarFinder.getDomainIcon();
+              } catch (ex) {
+                console.error("Error in getImageSrc:", ex);
+                return "chrome://messenger/skin/icons/mail.svg";
+              }
+            },
+
+            // Sort handling
+            getSortStringForRow: function(msgHdr) {
+              try {
+                const authorMatch = msgHdr.mime2DecodedAuthor || msgHdr.author;
+                const emailMatch = authorMatch.match(/<(.+?)>/);
+                if (!emailMatch) return "";
+                const avatarFinder = new AvatarFinder(emailMatch[1].toLowerCase());
+                return avatarFinder.getDomainFromEmail() || "";
+              } catch (ex) {
+                console.error("Error in getSortStringForRow:", ex);
+                return "";
+              }
+            },
+
+            // Required but unused
+            cycleCell: () => {},
+            isEditable: () => false
           });
-        },
-      },
+
+          columnAdded = true;
+          console.log("Custom column added successfully");
+        }
+      }
     };
   }
 
   close() {
-    ExtensionSupport.unregisterWindowListener(EXTENSION_NAME);
-    for (let win of Services.wm.getEnumerator('mail:3pane')) {
-      unpaint(win);
+    console.log("Cleaning up Thunvatar API");
+    try {
+      if (columnAdded) {
+        ThreadPaneColumns.removeCustomColumn("thunvatarColumn");
+        columnAdded = false;
+        console.log("Custom column removed successfully");
+      }
+    } catch (ex) {
+      console.error("Error removing column:", ex);
     }
   }
 };
-
-function paint(win) {
-  win.ThunvatarApi = {};
-  Services.scriptloader.loadSubScript(
-    extension.getURL('content/customcol.js'),
-    win.ThunvatarApi
-  );
-  win.ThunvatarApi.ThunvatarHeaderView.init(win);
-}
-
-function unpaint(win) {
-  if (!win.ThunvatarApi) return;
-  win.ThunvatarApi.ThunvatarHeaderView.destroy();
-  delete win.ThunvatarApi;
-}

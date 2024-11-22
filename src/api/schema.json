@@ -1,19 +1,14 @@
 [
   {
     "namespace": "ThunvatarApi",
+    "description": "API for displaying domain favicons in message list",
     "functions": [
       {
-        "name": "addWindowListener",
+        "name": "addCustomColumn",
         "type": "function",
-        "description": "Adds a listener 3pane windows",
-        "async": false,
-        "parameters": [
-          {
-            "name": "hich",
-            "type": "string",
-            "description": "hich"
-          }
-        ]
+        "description": "Adds a custom column to display domain favicons",
+        "async": true,
+        "parameters": []
       }
     ]
   }
